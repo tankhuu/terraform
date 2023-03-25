@@ -1,0 +1,59 @@
+pipeline {
+  agent any
+
+  options {
+    ansiColor('xterm')
+  }
+
+  parameters {
+    choice(name: 'environment', choices: ['dev', 'sit', 'prod'], description: 'Select environment.')
+  }
+
+  environment {
+    FUNCTION_NAME = 'sample-function'
+  }
+
+  stages {
+    stage('Build Libs') {
+      steps {
+        sh '''#!/bin/bash -xe
+          cd lambda
+          python3 -m pip install -r requirements.txt -t ./
+          cd ..
+        '''
+      }
+    }
+    stage('Init') {
+      steps {
+        echo "=> Init terraform project"
+        sh "terraform init"
+      }
+    }
+    stage('Plan') {
+      steps {
+        sh "terraform plan -var-file ${environment}.tfvars -out ${FUNCTION_NAME}.plan"
+      }
+    }
+    stage('Deploy') {
+      input {
+        message "Do you want to run Terraform apply with above changes? [no/yes]"
+        ok "yes"
+      }
+      steps {
+        sh "terraform apply ${FUNCTION_NAME}.plan"
+      }
+    }
+  }
+
+  post {
+    always {
+      script {
+        wrap([$class: 'BuildUser']) {
+          currentBuild.displayName = 'pipeline-display-name'
+          currentBuild.description = "By: $BUILD_USER_EMAIL"
+        }
+      }
+      cleanWs()
+    }
+  }
+}
